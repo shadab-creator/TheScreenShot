@@ -98,3 +98,21 @@ export async function addRecentCapture(
   });
   return next;
 }
+
+export async function removeRecentItem(id: string): Promise<RecentItem[]> {
+  if (!isTauri()) return [];
+  const prev = await loadRecentsList();
+  const item = prev.find((x) => x.id === id);
+  const next = prev.filter((x) => x.id !== id);
+  if (item) {
+    try {
+      await remove(item.file, { baseDir: BaseDirectory.AppLocalData });
+    } catch {
+      /* ignore */
+    }
+  }
+  await writeTextFile(INDEX_PATH, JSON.stringify({ items: next }), {
+    baseDir: BaseDirectory.AppLocalData,
+  });
+  return next;
+}

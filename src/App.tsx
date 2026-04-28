@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { captureFullscreen, type CaptureResult } from "./lib/tauri";
+import {
+  captureFocusedWindow,
+  captureFullscreen,
+  prepareRegionOverlay,
+  type CaptureResult,
+} from "./lib/tauri";
 import { currentMonitor } from "@tauri-apps/api/window";
 import { getShellWindow } from "./lib/tauri-shell";
 import {
   addRecentCapture,
   loadRecentsList,
+  removeRecentItem,
   type RecentItem,
 } from "./lib/recents";
 import { PreviewModal } from "./components/PreviewModal";
@@ -18,6 +24,7 @@ export function App() {
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  const [windowCaptureSec, setWindowCaptureSec] = useState<number | null>(null);
 
   useEffect(() => {
     void loadRecentsList().then(setRecents);
@@ -32,7 +39,7 @@ export function App() {
       const win = await getShellWindow();
       const mon = await currentMonitor();
       await win.hide();
-      await new Promise((r) => setTimeout(r, 120));
+      await new Promise((r) => setTimeout(r, 320));
       const hint =
         mon != null
           ? {
@@ -66,6 +73,7 @@ export function App() {
     setError("");
     setStatus("Select a region…");
     try {
+      await prepareRegionOverlay();
       const overlay = await WebviewWindow.getByLabel("overlay");
       if (overlay) {
         await overlay.show();
@@ -76,6 +84,47 @@ export function App() {
       setStatus("");
     }
   }, []);
+
+  const onCaptureActiveWindow = useCallback(() => {
+    setError("");
+    setWindowCaptureSec(3);
+    setStatus("Switch to the window you want… 3");
+  }, []);
+
+  useEffect(() => {
+    if (windowCaptureSec === null) return;
+    setStatus(`Switch to the window you want… ${windowCaptureSec}`);
+  }, [windowCaptureSec]);
+
+  useEffect(() => {
+    if (windowCaptureSec === null) return;
+    const id = window.setTimeout(() => {
+      setWindowCaptureSec((prev) => {
+        if (prev === null || prev <= 1) {
+          if (prev === 1) {
+            queueMicrotask(() => {
+              void (async () => {
+                setBusy(true);
+                try {
+                  const r = await captureFocusedWindow();
+                  setResult(r);
+                  void addRecentCapture(r).then(setRecents);
+                } catch (e) {
+                  setError(String(e));
+                } finally {
+                  setBusy(false);
+                  setStatus("");
+                }
+              })();
+            });
+          }
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearTimeout(id);
+  }, [windowCaptureSec]);
 
   useEffect(() => {
     const unlistenCap = listen<CaptureResult>("screenshot-captured", (evt) => {
@@ -118,11 +167,20 @@ export function App() {
         <button
           className="primary"
           onClick={onFullscreen}
-          disabled={busy}
+          disabled={busy || windowCaptureSec !== null}
         >
           Capture Full Screen
         </button>
-        <button onClick={onRegion} disabled={busy}>
+        <button
+          type="button"
+          onClick={onCaptureActiveWindow}
+          disabled={busy || windowCaptureSec !== null}
+        >
+          {windowCaptureSec !== null
+            ? `Window… ${windowCaptureSec}s`
+            : "Capture Active Window"}
+        </button>
+        <button onClick={onRegion} disabled={busy || windowCaptureSec !== null}>
           Capture Region
         </button>
       </div>
@@ -146,6 +204,9 @@ export function App() {
           setError("");
           setResult(cap);
         }}
+        onRemove={(id) => {
+          void removeRecentItem(id).then(setRecents);
+        }}
         onNotify={(msg) => {
           setStatus(msg);
           setTimeout(() => setStatus(""), 2500);
@@ -157,6 +218,10 @@ export function App() {
         <PreviewModal
           result={result}
           onClose={() => setResult(null)}
+          onDelete={() => setResult(null)}
+          onReplaceResult={(r) => {
+            setResult(r);
+          }}
           onNotify={(msg) => {
             setStatus(msg);
             setTimeout(() => setStatus(""), 2500);

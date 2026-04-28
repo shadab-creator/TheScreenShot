@@ -8,13 +8,6 @@ export interface CaptureResult {
   height: number;
 }
 
-export interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 /** Tauri `currentMonitor()` position + size in physical pixels; omit to capture the OS primary display. */
 export interface MonitorBoundsHint {
   x: number;
@@ -28,13 +21,32 @@ export const captureFullscreen = (monitor?: MonitorBoundsHint | null) =>
     bounds: monitor ?? null,
   });
 
-export const captureRegion = (r: Rect) =>
+/** Overlay-anchored region: logical rect + overlay outer origin (physical) + overlay scale factor. */
+export interface RegionCaptureArgs {
+  originX: number;
+  originY: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scaleFactor: number;
+}
+
+export const captureRegion = (args: RegionCaptureArgs) =>
   invoke<CaptureResult>("capture_region", {
-    x: r.x,
-    y: r.y,
-    width: r.width,
-    height: r.height,
+    originX: args.originX,
+    originY: args.originY,
+    x: args.x,
+    y: args.y,
+    width: args.width,
+    height: args.height,
+    scaleFactor: args.scaleFactor,
   });
+
+export const captureFocusedWindow = () =>
+  invoke<CaptureResult>("capture_focused_window");
+
+export const prepareRegionOverlay = () => invoke<void>("prepare_region_overlay");
 
 export const dataUrlFor = (r: CaptureResult) =>
   `data:image/png;base64,${r.base64}`;

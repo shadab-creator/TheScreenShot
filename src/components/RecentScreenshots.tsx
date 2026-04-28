@@ -8,6 +8,7 @@ import {
 interface Props {
   items: RecentItem[];
   onEdit: (result: CaptureResult) => void;
+  onRemove: (id: string) => void;
   onNotify: (message: string) => void;
   onError: (message: string) => void;
 }
@@ -15,6 +16,7 @@ interface Props {
 export function RecentScreenshots({
   items,
   onEdit,
+  onRemove,
   onNotify,
   onError,
 }: Props) {
@@ -109,6 +111,13 @@ export function RecentScreenshots({
                 }}
               >
                 Copy
+              </button>
+              <button
+                type="button"
+                className="recents-action recents-action--danger"
+                onClick={() => onRemove(it.id)}
+              >
+                Delete
               </button>
             </div>
           </div>

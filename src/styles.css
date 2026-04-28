@@ -209,6 +209,52 @@ kbd {
   font-size: 12px;
 }
 
+.preview-resize-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.preview-resize-input {
+  width: 72px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.preview-resize-times {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.preview-resize-apply {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.preview-resize-hint {
+  font-size: 11px;
+  color: var(--muted);
+  flex: 1 1 100%;
+}
+
+.btn-danger {
+  border-color: rgba(255, 77, 77, 0.45);
+  color: #ff6b6b;
+}
+
+.btn-danger:hover {
+  background: rgba(255, 77, 77, 0.12);
+}
+
 .annotate-tool-group {
   display: flex;
   gap: 6px;
@@ -282,7 +328,7 @@ kbd {
 
 .recents-card {
   flex: 0 0 auto;
-  width: 112px;
+  width: 128px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -324,6 +370,7 @@ kbd {
 
 .recents-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   justify-content: center;
 }
@@ -332,6 +379,11 @@ kbd {
   padding: 4px 8px;
   font-size: 11px;
   border-radius: 6px;
+}
+
+.recents-action--danger {
+  border-color: rgba(255, 77, 77, 0.4);
+  color: #ff6b6b;
 }
 
 .preview--stack {

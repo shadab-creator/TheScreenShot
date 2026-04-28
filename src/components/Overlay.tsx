@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { captureRegion, type CaptureResult } from "../lib/tauri";
 import { getShellWindow } from "../lib/tauri-shell";
 
@@ -99,11 +100,18 @@ export function Overlay() {
       await win.hide();
       await new Promise((r) => setTimeout(r, 80));
 
+      const overlayWin = WebviewWindow.getCurrent();
+      const outer = await overlayWin.outerPosition();
+      const scaleFactor = await overlayWin.scaleFactor();
+
       const result: CaptureResult = await captureRegion({
+        originX: outer.x,
+        originY: outer.y,
         x: Math.round(rect.x),
         y: Math.round(rect.y),
         width: Math.round(rect.w),
         height: Math.round(rect.h),
+        scaleFactor,
       });
       await emit("screenshot-captured", result);
     } catch (err) {

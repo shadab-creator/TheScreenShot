@@ -2,9 +2,11 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use tauri::Manager;
 
 use crate::capture::{
-    capture_for_tauri_monitor_bounds, capture_primary, crop_logical, encode_png, MonitorBounds,
+    capture_focused_window_image, capture_for_tauri_monitor_bounds, capture_primary,
+    capture_screen_region_physical, encode_png, MonitorBounds,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -38,20 +40,46 @@ pub async fn capture_fullscreen(bounds: Option<MonitorBounds>) -> Result<Capture
     to_result(frame.image)
 }
 
+/// Region in **logical/CSS pixels** relative to the overlay window; `origin_*` is overlay
+/// [`WebviewWindow::outer_position`] (physical px); `scale_factor` is overlay `scale_factor()`.
 #[tauri::command]
 pub async fn capture_region(
+    origin_x: i32,
+    origin_y: i32,
     x: i32,
     y: i32,
     width: u32,
     height: u32,
+    scale_factor: f64,
 ) -> Result<CaptureResult, String> {
-    let cropped = tauri::async_runtime::spawn_blocking(move || -> Result<image::RgbaImage, String> {
-        let frame = capture_primary()?;
-        crop_logical(&frame, x, y, width, height)
+    let gx = origin_x + (x as f64 * scale_factor).round() as i32;
+    let gy = origin_y + (y as f64 * scale_factor).round() as i32;
+    let gw = (width as f64 * scale_factor).round().clamp(1.0, 1_000_000.0) as u32;
+    let gh = (height as f64 * scale_factor).round().clamp(1.0, 1_000_000.0) as u32;
+
+    let cropped = tauri::async_runtime::spawn_blocking(move || {
+        capture_screen_region_physical(gx, gy, gw, gh)
     })
     .await
     .map_err(|e| format!("join error: {e}"))??;
     to_result(cropped)
+}
+
+#[tauri::command]
+pub async fn capture_focused_window() -> Result<CaptureResult, String> {
+    let img = tauri::async_runtime::spawn_blocking(capture_focused_window_image)
+        .await
+        .map_err(|e| format!("join error: {e}"))??;
+    to_result(img)
+}
+
+/// Resize the overlay to span every monitor (call before showing region selection).
+#[tauri::command]
+pub fn prepare_region_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window missing".to_string())?;
+    crate::layout_overlay_all_monitors(&overlay).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

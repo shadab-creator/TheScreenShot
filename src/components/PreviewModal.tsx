@@ -22,6 +22,10 @@ interface Props {
   onClose: () => void;
   onNotify: (message: string) => void;
   onError: (message: string) => void;
+  /** Replace the working image (e.g. after resize). */
+  onReplaceResult?: (r: CaptureResult) => void;
+  /** Discard this capture and close (no save). */
+  onDelete?: () => void;
 }
 
 function canvasPoint(
@@ -94,6 +98,8 @@ export function PreviewModal({
   onClose,
   onNotify,
   onError,
+  onReplaceResult,
+  onDelete,
 }: Props) {
   const baseRef = useRef<HTMLCanvasElement>(null);
   const inkRef = useRef<HTMLCanvasElement>(null);
@@ -105,8 +111,15 @@ export function PreviewModal({
   const [tool, setTool] = useState<MarkTool>("rectangle");
   const [textBuffer, setTextBuffer] = useState("Note");
   const [inkKey, setInkKey] = useState(0);
+  const [dimW, setDimW] = useState(result.width);
+  const [dimH, setDimH] = useState(result.height);
 
   const strokeWidth = Math.max(3, Math.round(result.width / 350));
+
+  useEffect(() => {
+    setDimW(result.width);
+    setDimH(result.height);
+  }, [result.width, result.height, result.base64]);
 
   useEffect(() => {
     const base = baseRef.current;
@@ -163,6 +176,35 @@ export function PreviewModal({
   }, [result]);
 
   const clearMarks = () => setInkKey((k) => k + 1);
+
+  const applyResize = () => {
+    if (!onReplaceResult) return;
+    const w = Math.max(32, Math.min(8192, Math.round(Number(dimW)) || result.width));
+    const h = Math.max(32, Math.min(8192, Math.round(Number(dimH)) || result.height));
+    if (w === result.width && h === result.height) return;
+    const cap = composite();
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const cx = c.getContext("2d");
+      if (!cx) return;
+      cx.imageSmoothingEnabled = true;
+      cx.imageSmoothingQuality = "high";
+      cx.drawImage(img, 0, 0, w, h);
+      const dataUrl = c.toDataURL("image/png");
+      const prefix = "data:image/png;base64,";
+      const base64 = dataUrl.startsWith(prefix)
+        ? dataUrl.slice(prefix.length)
+        : dataUrl.split(",")[1] ?? "";
+      onReplaceResult({ base64, width: w, height: h });
+      setInkKey((k) => k + 1);
+      onNotify(`Resized to ${w}×${h}`);
+    };
+    img.onerror = () => onError("Could not resize image");
+    img.src = dataUrlFor(cap);
+  };
 
   const ensureShapeSnapshot = (w: number, h: number) => {
     let snap = shapeSnapRef.current;
@@ -388,6 +430,35 @@ export function PreviewModal({
           </button>
         </div>
 
+        {onReplaceResult && (
+          <div className="preview-resize-row">
+            <span className="annotate-label">Canvas size</span>
+            <input
+              type="number"
+              className="preview-resize-input"
+              min={32}
+              max={8192}
+              value={dimW}
+              onChange={(ev) => setDimW(Number(ev.target.value))}
+              aria-label="Width in pixels"
+            />
+            <span className="preview-resize-times">×</span>
+            <input
+              type="number"
+              className="preview-resize-input"
+              min={32}
+              max={8192}
+              value={dimH}
+              onChange={(ev) => setDimH(Number(ev.target.value))}
+              aria-label="Height in pixels"
+            />
+            <button type="button" className="preview-resize-apply" onClick={applyResize}>
+              Apply resize
+            </button>
+            <span className="preview-resize-hint">Scales image + marks</span>
+          </div>
+        )}
+
         <div className="preview preview--stack">
           <div className="preview-canvas-wrap">
             <canvas ref={baseRef} className="preview-canvas preview-canvas--base" />
@@ -409,6 +480,11 @@ export function PreviewModal({
           <button type="button" onClick={onClose}>
             Close
           </button>
+          {onDelete && (
+            <button type="button" className="btn-danger" onClick={onDelete}>
+              Delete
+            </button>
+          )}
           <button type="button" onClick={handleCopy}>
             Copy
           </button>
