@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/overlay.tsx","./src/components/overlay.tsx","./src/components/previewmodal.tsx","./src/components/recentscreenshots.tsx","./src/lib/recents.ts","./src/lib/tauri-shell.ts","./src/lib/tauri.ts"],"version":"5.9.3"}

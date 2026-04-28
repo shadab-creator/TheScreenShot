@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
 import { captureRegion, type CaptureResult } from "../lib/tauri";
+import { getShellWindow } from "../lib/tauri-shell";
 
 type Point = { x: number; y: number };
 
@@ -35,7 +35,8 @@ export function Overlay() {
 
   const cancel = async () => {
     try {
-      await getCurrentWindow().hide();
+      const w = await getShellWindow();
+      await w.hide();
     } catch {
       /* ignore */
     }
@@ -94,7 +95,7 @@ export function Overlay() {
     try {
       // Hide the overlay window BEFORE capturing so the dark scrim isn't
       // in the screenshot. Small delay to ensure the hide is painted.
-      const win = getCurrentWindow();
+      const win = await getShellWindow();
       await win.hide();
       await new Promise((r) => setTimeout(r, 80));
 

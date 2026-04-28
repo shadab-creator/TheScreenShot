@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-use crate::capture::{capture_primary, crop_logical, encode_png};
+use crate::capture::{
+    capture_for_tauri_monitor_bounds, capture_primary, crop_logical, encode_png, MonitorBounds,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CaptureResult {
@@ -24,11 +26,15 @@ fn to_result(img: image::RgbaImage) -> Result<CaptureResult, String> {
     })
 }
 
+/// `bounds` should be Tauri `currentMonitor()` position + size (physical px). When `None`, uses the primary display.
 #[tauri::command]
-pub async fn capture_fullscreen() -> Result<CaptureResult, String> {
-    let frame = tauri::async_runtime::spawn_blocking(capture_primary)
-        .await
-        .map_err(|e| format!("join error: {e}"))??;
+pub async fn capture_fullscreen(bounds: Option<MonitorBounds>) -> Result<CaptureResult, String> {
+    let frame = tauri::async_runtime::spawn_blocking(move || match bounds {
+        Some(b) => capture_for_tauri_monitor_bounds(&b),
+        None => capture_primary(),
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))??;
     to_result(frame.image)
 }
 

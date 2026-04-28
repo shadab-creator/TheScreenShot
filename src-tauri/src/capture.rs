@@ -1,5 +1,15 @@
 use image::{codecs::png::PngEncoder, ImageBuffer, ImageEncoder, Rgba, RgbaImage};
-use xcap::Monitor;
+use serde::Deserialize;
+use xcap::{Monitor, XCapError};
+
+/// Physical bounds of a monitor as reported by the windowing system (e.g. Tauri `currentMonitor`).
+#[derive(Debug, Deserialize)]
+pub struct MonitorBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
 
 pub struct CapturedFrame {
     pub image: RgbaImage,
@@ -9,18 +19,25 @@ pub struct CapturedFrame {
     pub scale_factor: f32,
 }
 
+fn xcap_err(e: XCapError) -> String {
+    format!("{e}")
+}
+
 fn pick_primary_monitor() -> Result<Monitor, String> {
     let monitors = Monitor::all().map_err(|e| format!("failed to enumerate monitors: {e}"))?;
     if monitors.is_empty() {
         return Err("no monitors detected".into());
     }
-    let primary = monitors.iter().find(|m| m.is_primary()).cloned();
-    Ok(primary.unwrap_or_else(|| monitors[0].clone()))
+    for m in &monitors {
+        if m.is_primary().map_err(xcap_err)? {
+            return Ok(m.clone());
+        }
+    }
+    Ok(monitors[0].clone())
 }
 
-pub fn capture_primary() -> Result<CapturedFrame, String> {
-    let monitor = pick_primary_monitor()?;
-    let scale_factor = monitor.scale_factor();
+fn capture_on_monitor(monitor: &Monitor) -> Result<CapturedFrame, String> {
+    let scale_factor = monitor.scale_factor().map_err(xcap_err)?;
     let raw = monitor
         .capture_image()
         .map_err(|e| format!("capture_image failed: {e}"))?;
@@ -35,6 +52,83 @@ pub fn capture_primary() -> Result<CapturedFrame, String> {
         image,
         scale_factor,
     })
+}
+
+/// Capture the display that contains `(px, py)` in global screen coordinates
+/// (physical pixels, same space as Tauri `outer_position`).
+pub fn capture_at_point(px: i32, py: i32) -> Result<CapturedFrame, String> {
+    let monitor = Monitor::from_point(px, py).map_err(xcap_err)?;
+    capture_on_monitor(&monitor)
+}
+
+fn rect_intersection_area(
+    ax: i64,
+    ay: i64,
+    aw: i64,
+    ah: i64,
+    bx: i64,
+    by: i64,
+    bw: i64,
+    bh: i64,
+) -> i64 {
+    let ix1 = ax.max(bx);
+    let iy1 = ay.max(by);
+    let ix2 = (ax + aw).min(bx + bw);
+    let iy2 = (ay + ah).min(by + bh);
+    if ix2 > ix1 && iy2 > iy1 {
+        (ix2 - ix1) * (iy2 - iy1)
+    } else {
+        0
+    }
+}
+
+/// Pick the xcap monitor that matches Tauri’s idea of the current display (overlap / center tests),
+/// avoiding macOS coordinate mismatches between window APIs and `CGGetDisplaysWithPoint`.
+pub fn capture_for_tauri_monitor_bounds(bounds: &MonitorBounds) -> Result<CapturedFrame, String> {
+    let monitors: Vec<Monitor> =
+        Monitor::all().map_err(|e| format!("failed to enumerate monitors: {e}"))?;
+    if monitors.is_empty() {
+        return Err("no monitors detected".into());
+    }
+
+    let bx = bounds.x as i64;
+    let by = bounds.y as i64;
+    let bw = bounds.width as i64;
+    let bh = bounds.height as i64;
+    let hint_cx = bx + bw / 2;
+    let hint_cy = by + bh / 2;
+
+    let mut best: Option<(Monitor, i64)> = None;
+    for m in &monitors {
+        let mx = m.x().map_err(xcap_err)? as i64;
+        let my = m.y().map_err(xcap_err)? as i64;
+        let mw = m.width().map_err(xcap_err)? as i64;
+        let mh = m.height().map_err(xcap_err)? as i64;
+        let area = rect_intersection_area(bx, by, bw, bh, mx, my, mw, mh);
+        if area > 0 && best.as_ref().map_or(true, |(_, a)| area > *a) {
+            best = Some((m.clone(), area));
+        }
+    }
+    if let Some((m, _)) = best {
+        return capture_on_monitor(&m);
+    }
+
+    for m in &monitors {
+        let mx = m.x().map_err(xcap_err)? as i64;
+        let my = m.y().map_err(xcap_err)? as i64;
+        let mw = m.width().map_err(xcap_err)? as i64;
+        let mh = m.height().map_err(xcap_err)? as i64;
+        if hint_cx >= mx && hint_cx < mx + mw && hint_cy >= my && hint_cy < my + mh {
+            return capture_on_monitor(m);
+        }
+    }
+
+    capture_at_point(hint_cx as i32, hint_cy as i32).or_else(|_| capture_primary())
+}
+
+pub fn capture_primary() -> Result<CapturedFrame, String> {
+    let monitor = pick_primary_monitor()?;
+    capture_on_monitor(&monitor)
 }
 
 /// Crop an image using logical (CSS pixel) coordinates, applying the

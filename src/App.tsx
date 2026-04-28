@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { captureFullscreen, type CaptureResult } from "./lib/tauri";
+import { currentMonitor } from "@tauri-apps/api/window";
+import { getShellWindow } from "./lib/tauri-shell";
 import {
-  captureFullscreen,
-  copyToClipboard,
-  savePng,
-  type CaptureResult,
-} from "./lib/tauri";
+  addRecentCapture,
+  loadRecentsList,
+  type RecentItem,
+} from "./lib/recents";
 import { PreviewModal } from "./components/PreviewModal";
+import { RecentScreenshots } from "./components/RecentScreenshots";
 
 export function App() {
   const [result, setResult] = useState<CaptureResult | null>(null);
+  const [recents, setRecents] = useState<RecentItem[]>([]);
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void loadRecentsList().then(setRecents);
+  }, []);
 
   const onFullscreen = useCallback(async () => {
     setError("");
@@ -22,19 +29,31 @@ export function App() {
     setBusy(true);
     try {
       // Hide main window briefly so it doesn't appear in its own shot.
-      const win = getCurrentWindow();
+      const win = await getShellWindow();
+      const mon = await currentMonitor();
       await win.hide();
       await new Promise((r) => setTimeout(r, 120));
-      const r = await captureFullscreen();
+      const hint =
+        mon != null
+          ? {
+              x: mon.position.x,
+              y: mon.position.y,
+              width: mon.size.width,
+              height: mon.size.height,
+            }
+          : null;
+      const r = await captureFullscreen(hint);
       await win.show();
       await win.setFocus();
       setResult(r);
+      void addRecentCapture(r).then(setRecents);
       setStatus("");
     } catch (e) {
       setError(String(e));
       setStatus("");
       try {
-        await getCurrentWindow().show();
+        const w = await getShellWindow();
+        await w.show();
       } catch {
         /* ignore */
       }
@@ -61,10 +80,18 @@ export function App() {
   useEffect(() => {
     const unlistenCap = listen<CaptureResult>("screenshot-captured", (evt) => {
       setResult(evt.payload);
+      void addRecentCapture(evt.payload).then(setRecents);
       setStatus("");
       setError("");
-      void getCurrentWindow().show();
-      void getCurrentWindow().setFocus();
+      void (async () => {
+        try {
+          const w = await getShellWindow();
+          await w.show();
+          await w.setFocus();
+        } catch {
+          /* ignore */
+        }
+      })();
     });
     const unlistenErr = listen<string>("screenshot-error", (evt) => {
       setError(evt.payload);
@@ -75,30 +102,6 @@ export function App() {
       void unlistenErr.then((fn) => fn());
     };
   }, []);
-
-  const handleCopy = async () => {
-    if (!result) return;
-    try {
-      await copyToClipboard(result);
-      setStatus("Copied to clipboard");
-      setTimeout(() => setStatus(""), 1500);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const handleSave = async () => {
-    if (!result) return;
-    try {
-      const path = await savePng(result);
-      if (path) {
-        setStatus(`Saved to ${path}`);
-        setTimeout(() => setStatus(""), 2500);
-      }
-    } catch (e) {
-      setError(String(e));
-    }
-  };
 
   const shortcutKey = isMac() ? "⌘" : "Ctrl";
 
@@ -137,12 +140,28 @@ export function App() {
         {error || status}
       </div>
 
+      <RecentScreenshots
+        items={recents}
+        onEdit={(cap) => {
+          setError("");
+          setResult(cap);
+        }}
+        onNotify={(msg) => {
+          setStatus(msg);
+          setTimeout(() => setStatus(""), 2500);
+        }}
+        onError={(msg) => setError(msg)}
+      />
+
       {result && (
         <PreviewModal
           result={result}
           onClose={() => setResult(null)}
-          onCopy={handleCopy}
-          onSave={handleSave}
+          onNotify={(msg) => {
+            setStatus(msg);
+            setTimeout(() => setStatus(""), 2500);
+          }}
+          onError={(msg) => setError(msg)}
         />
       )}
     </div>

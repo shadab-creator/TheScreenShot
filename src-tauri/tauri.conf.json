@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.thescreenshot.app",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -15,8 +15,8 @@
       {
         "label": "main",
         "title": "TheScreenShot",
-        "width": 720,
-        "height": 520,
+        "width": 760,
+        "height": 720,
         "resizable": true,
         "fullscreen": false,
         "visible": true

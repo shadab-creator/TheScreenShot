@@ -15,11 +15,26 @@ export interface Rect {
   height: number;
 }
 
-export const captureFullscreen = () =>
-  invoke<CaptureResult>("capture_fullscreen");
+/** Tauri `currentMonitor()` position + size in physical pixels; omit to capture the OS primary display. */
+export interface MonitorBoundsHint {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export const captureFullscreen = (monitor?: MonitorBoundsHint | null) =>
+  invoke<CaptureResult>("capture_fullscreen", {
+    bounds: monitor ?? null,
+  });
 
 export const captureRegion = (r: Rect) =>
-  invoke<CaptureResult>("capture_region", r);
+  invoke<CaptureResult>("capture_region", {
+    x: r.x,
+    y: r.y,
+    width: r.width,
+    height: r.height,
+  });
 
 export const dataUrlFor = (r: CaptureResult) =>
   `data:image/png;base64,${r.base64}`;
@@ -45,11 +60,18 @@ export async function savePng(result: CaptureResult): Promise<string | null> {
   return path;
 }
 
-function base64ToBytes(b64: string): Uint8Array {
+export function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary);
 }
 
 function timestamp(): string {
